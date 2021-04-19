@@ -48,7 +48,7 @@ export class App extends Flow<
    */
   public detect(opts?: Deno.ListenOptions | Deno.ListenTlsOptions) {
     try {
-      if (Deno.env.get("DENO_DEPLOYMENT_ID") !== undefined) {
+      if ("FetchEvent" in window) {
         this.strategy(new Deploy().hook());
         return "deploy";
       }

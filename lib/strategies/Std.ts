@@ -14,15 +14,31 @@ import AppContext from "../structure/AppContext.ts";
 
 export class StdContext extends AppContext {
   #req: ServerRequest;
-  public constructor(req: ServerRequest, body: Uint8Array | null) {
+  public constructor(
+    req: ServerRequest,
+    body: Uint8Array | null,
+    secure: boolean,
+  ) {
+    let customUrl: string | undefined = undefined;
+    if (req.headers.has("host")) {
+      let url = "http";
+      if (secure) url += "s";
+      url += "://" + req.headers.get("host") + req.url;
+      customUrl = url;
+    }
+
     // Must be a complete URL.
-    const r = new Request("http://a" + req.url, {
-      body,
-      method: req.method,
-      headers: req.headers,
-    });
+    const r = new Request(
+      customUrl ? customUrl : "http://a" + req.url,
+      {
+        body,
+        method: req.method,
+        headers: req.headers,
+      },
+    );
     Object.defineProperty(r, "url", {
-      value: r.url.substring(8, r.url.length),
+      value: customUrl ? customUrl : r.url.substring(8, r.url.length),
+      writable: false,
     });
     super(r);
     this.#req = req;
@@ -43,6 +59,7 @@ export class StdContext extends AppContext {
 export class Std extends Strategy {
   #listener?: Server;
   #cancel?: () => unknown;
+  #secure = false;
 
   public hook(options: HTTPOptions | HTTPSOptions) {
     if (this.#listener !== undefined) return this;
@@ -51,8 +68,10 @@ export class Std extends Strategy {
       typeof (options as HTTPSOptions).certFile === "string"
     ) {
       this.#listener = serveTLS(options as HTTPSOptions);
+      this.#secure = true;
     } else {
       this.#listener = serve(options);
+      this.#secure = false;
     }
     const { cancel } = forever(async (cancel) => {
       let brk = false;
@@ -69,6 +88,7 @@ export class Std extends Strategy {
         const ctx = new StdContext(
           request,
           body,
+          this.#secure,
         );
         await this.dispatch(ctx);
       }

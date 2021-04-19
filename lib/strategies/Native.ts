@@ -10,8 +10,18 @@ export interface RequestEvent {
 
 export class NativeContext extends AppContext {
   #event: RequestEvent;
-  public constructor(event: RequestEvent) {
-    super(event.request);
+  public constructor(event: RequestEvent, secure: boolean) {
+    const req = new Request(event.request);
+    if (req.headers.has("host")) {
+      let url = "http";
+      if (secure) url += "s";
+      url += "://" + req.headers.get("host") + req.url;
+      Object.defineProperty(req, "url", {
+        value: url,
+        writable: false,
+      });
+    }
+    super(req);
     this.#event = event;
   }
   public async respond(response: Response) {
@@ -26,6 +36,7 @@ export class NativeContext extends AppContext {
 export class Native extends Strategy {
   #listener?: Deno.Listener;
   #cancel?: () => unknown;
+  #secure = false;
 
   public constructor() {
     super();
@@ -43,8 +54,10 @@ export class Native extends Strategy {
       typeof (options as Deno.ListenTlsOptions).certFile === "string"
     ) {
       this.#listener = Deno.listenTls(options as Deno.ListenTlsOptions);
+      this.#secure = true;
     } else {
       this.#listener = Deno.listen(options);
+      this.#secure = false;
     }
     const { cancel } = forever(async (cancel) => {
       let brk = false;
@@ -66,7 +79,7 @@ export class Native extends Strategy {
     // deno-lint-ignore no-explicit-any
     const http = (Deno as any).serveHttp(conn);
     for await (const event of http) {
-      const ctx = new NativeContext(event);
+      const ctx = new NativeContext(event, this.#secure);
       await this.dispatch(ctx);
     }
   }
